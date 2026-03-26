@@ -7,8 +7,8 @@ export default function HomePage() {
   const [signals, setSignals] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [stats, setStats] = useState({ total: 0, hacker_news: 0, arxiv: 0, github_trending: 0 })
-  const [displayStats, setDisplayStats] = useState({ total: 0, hacker_news: 0, arxiv: 0, github_trending: 0 })
+  const [stats, setStats] = useState({})
+  const [displayStats, setDisplayStats] = useState({})
   const [cardHover, setCardHover] = useState(null)
   const [statHover, setStatHover] = useState(null)
   const [searchFocused, setSearchFocused] = useState(false)
@@ -20,17 +20,42 @@ export default function HomePage() {
   const [availableCategories, setAvailableCategories] = useState([])
   const [lastCrawled, setLastCrawled] = useState(null)
   const [totalEver, setTotalEver] = useState(0)
+  const [totalFiltered, setTotalFiltered] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
+  const SIGNALS_PER_PAGE = 100
 
   // Supabase fetch
   useEffect(() => {
-    async function fetchSignals() {
-      const { data, error } = await supabase
+    async function fetchPage() {
+      setLoading(true)
+
+      const from = (currentPage - 1) * SIGNALS_PER_PAGE
+      const to = from + SIGNALS_PER_PAGE - 1
+
+      let query = supabase
         .from('signals')
-        .select('id, title, url, source, score_weighted, category, summary_data, crawled_at')
+        .select('id, title, url, source, score_weighted, category, summary_data, crawled_at, raw_content', { count: 'exact' })
         .eq('scored', true)
         .eq('classification->>is_relevant', 'true')
-        .order('score_weighted', { ascending: false })
-        .limit(200)
+
+      if (search) {
+        query = query.or(`title.ilike.%${search}%,url.ilike.%${search}%,raw_content.ilike.%${search}%`)
+      }
+      if (selectedSources.length > 0) {
+        query = query.in('source', selectedSources)
+      }
+      if (selectedCategories.length > 0) {
+        query = query.in('category', selectedCategories)
+      }
+      if (sortBy === 'score') {
+        query = query.order('score_weighted', { ascending: false })
+      } else {
+        query = query.order('crawled_at', { ascending: false })
+      }
+
+      query = query.range(from, to)
+
+      const { data, error, count } = await query
 
       if (error) {
         console.error('Supabase fetch error:', error)
@@ -40,18 +65,7 @@ export default function HomePage() {
 
       const results = data || []
       setSignals(results)
-
-      const uniqueSources = [...new Set(results.map(s => s.source).filter(Boolean))]
-      setAvailableSources(uniqueSources)
-
-      const uniqueCategories = [...new Set(results.map(s => s.category).filter(Boolean))]
-      setAvailableCategories(uniqueCategories)
-
-      const statsObj = { total: results.length }
-      uniqueSources.forEach(src => {
-        statsObj[src] = results.filter(s => s.source === src).length
-      })
-      setStats(statsObj)
+      setTotalFiltered(count || 0)
 
       const dates = results.map(s => new Date(s.crawled_at)).filter(d => !isNaN(d))
       if (dates.length > 0) {
@@ -61,16 +75,43 @@ export default function HomePage() {
       setLoading(false)
     }
 
-    async function fetchTotalEver() {
-      const { count, error } = await supabase
+    async function fetchMeta() {
+      const { count: totalCount } = await supabase
         .from('signals')
         .select('id', { count: 'exact', head: true })
-      if (!error && count !== null) setTotalEver(count)
+      if (totalCount !== null) {
+        setTotalEver(totalCount)
+      }
+
+      const { data: srcData } = await supabase
+        .from('signals')
+        .select('source')
+        .eq('scored', true)
+        .eq('classification->>is_relevant', 'true')
+      if (srcData) {
+        const uniqueSources = [...new Set(srcData.map(s => s.source).filter(Boolean))]
+        setAvailableSources(uniqueSources)
+        const statsObj = { total: count || 0 }
+        uniqueSources.forEach(src => {
+          statsObj[src] = srcData.filter(s => s.source === src).length
+        })
+        setStats(statsObj)
+      }
+
+      const { data: catData } = await supabase
+        .from('signals')
+        .select('category')
+        .eq('scored', true)
+        .eq('classification->>is_relevant', 'true')
+      if (catData) {
+        const uniqueCategories = [...new Set(catData.map(s => s.category).filter(Boolean))]
+        setAvailableCategories(uniqueCategories)
+      }
     }
 
-    fetchSignals()
-    fetchTotalEver()
-  }, [])
+    fetchPage()
+    fetchMeta()
+  }, [currentPage, search, selectedSources, selectedCategories, sortBy])
 
   // Animated stats counter
   useEffect(() => {
@@ -96,6 +137,11 @@ export default function HomePage() {
     return () => clearInterval(timer)
   }, [stats])
 
+  // Reset to page 1 when filters/search change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, selectedSources, selectedCategories, sortBy])
+
   // Toggle source filter
   const toggleSource = (source) => {
     setSelectedSources(prev =>
@@ -112,14 +158,8 @@ export default function HomePage() {
 
   // Filter + sort
   const filteredSignals = signals
-    .filter(s => s.title?.toLowerCase().includes(search.toLowerCase()))
-    .filter(s => selectedSources.length === 0 || selectedSources.includes(s.source))
-    .filter(s => selectedCategories.length === 0 || selectedCategories.includes(s.category))
-    .sort((a, b) => {
-      if (sortBy === 'score') return (b.score_weighted || 0) - (a.score_weighted || 0)
-      if (sortBy === 'date') return new Date(b.crawled_at) - new Date(a.crawled_at)
-      return 0
-    })
+  const paginatedSignals = signals
+  const totalPages = Math.ceil(totalFiltered / SIGNALS_PER_PAGE)
 
   // Format helpers
   const formatSource = (source) =>
@@ -454,6 +494,26 @@ export default function HomePage() {
           gap: 16, flexWrap: 'wrap', marginBottom: 40,
           animation: 'fadeIn 0.8s ease 0.3s forwards', opacity: 0,
         }}>
+          <div
+            onMouseEnter={() => setStatHover('db_total')}
+            onMouseLeave={() => setStatHover(null)}
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.03)',
+              backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+              border: statHover === 'db_total' ? '1px solid rgba(255,255,255,0.22)' : '1px solid rgba(255,255,255,0.07)',
+              borderRadius: 18, padding: '22px 36px', textAlign: 'center', minWidth: 140,
+              transform: statHover === 'db_total' ? 'translateY(-3px) scale(1.03)' : 'translateY(0) scale(1)',
+              transition: 'all 0.25s ease',
+            }}
+          >
+            <div style={{ fontSize: 38, fontWeight: 800, color: 'white', fontFamily: 'monospace', lineHeight: 1 }}>
+              {totalEver.toLocaleString()}
+            </div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: 3, textTransform: 'uppercase', marginTop: 8 }}>
+              In Database
+            </div>
+          </div>
+
           {/* Total signals card */}
           <div
             onMouseEnter={() => setStatHover('total')}
@@ -526,7 +586,7 @@ export default function HomePage() {
         {/* SIGNAL COUNT */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', letterSpacing: 3, textTransform: 'uppercase' }}>
-            Showing {filteredSignals.length} signals
+            Showing {totalFiltered.toLocaleString()} signals &nbsp;·&nbsp; Page {currentPage} of {totalPages || 1}
           </span>
         </div>
 
@@ -551,7 +611,7 @@ export default function HomePage() {
         {/* SIGNAL FEED */}
         {!loading && filteredSignals.length > 0 && (
           <div style={{ maxWidth: 820, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {filteredSignals.map((signal, index) => (
+            {paginatedSignals.map((signal, index) => (
               <div
                 key={signal.id}
                 onMouseEnter={() => setCardHover(signal.id)}
@@ -625,6 +685,40 @@ export default function HomePage() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, marginTop: 32, marginBottom: 16 }}>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              style={{
+                padding: '10px 24px', borderRadius: 10, fontSize: 12,
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)',
+                color: currentPage === 1 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)',
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+              }}
+            >
+              ← Prev
+            </button>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: 2 }}>
+              {currentPage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              style={{
+                padding: '10px 24px', borderRadius: 10, fontSize: 12,
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)',
+                color: currentPage === totalPages ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.6)',
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Next →
+            </button>
           </div>
         )}
 

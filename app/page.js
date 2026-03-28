@@ -22,6 +22,7 @@ export default function HomePage() {
   const [totalEver, setTotalEver] = useState(0)
   const [totalFiltered, setTotalFiltered] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
+  const [dateFilter, setDateFilter] = useState('all')
   const SIGNALS_PER_PAGE = 100
 
   // Supabase fetch logic
@@ -46,10 +47,20 @@ export default function HomePage() {
     if (selectedCategories.length > 0) {
       query = query.in('category', selectedCategories)
     }
-    if (sortBy === 'score') {
+    if (dateFilter === 'oldest') {
+      query = query.order('crawled_at', { ascending: true })
+    } else if (sortBy === 'score') {
       query = query.order('score_weighted', { ascending: false })
     } else {
       query = query.order('crawled_at', { ascending: false })
+    }
+
+    if (dateFilter === 'today') {
+      query = query.gte('crawled_at', new Date(Date.now() - 86400000).toISOString())
+    } else if (dateFilter === 'week') {
+      query = query.gte('crawled_at', new Date(Date.now() - 7 * 86400000).toISOString())
+    } else if (dateFilter === 'month') {
+      query = query.gte('crawled_at', new Date(Date.now() - 30 * 86400000).toISOString())
     }
 
     query = query.range(from, to)
@@ -111,7 +122,7 @@ export default function HomePage() {
   useEffect(() => {
     fetchPage()
     fetchMeta()
-  }, [currentPage, search, selectedSources, selectedCategories, sortBy])
+  }, [currentPage, search, selectedSources, selectedCategories, sortBy, dateFilter])
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -148,7 +159,7 @@ export default function HomePage() {
   // Reset to page 1 when filters/search change
   useEffect(() => {
     setCurrentPage(1)
-  }, [search, selectedSources, selectedCategories, sortBy])
+  }, [search, selectedSources, selectedCategories, sortBy, dateFilter])
 
   // Toggle source filter
   const toggleSource = (source) => {
@@ -381,6 +392,37 @@ export default function HomePage() {
               Date
             </button>
           </div>
+        </div>
+
+        {/* Date Filter section */}
+        <div style={{ marginBottom: 4, marginTop: 24 }}>
+          <div style={{
+            fontSize: 10, letterSpacing: 3,
+            color: 'rgba(255,255,255,0.3)',
+            textTransform: 'uppercase', marginBottom: 10,
+          }}>
+            DATE
+          </div>
+          <select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            style={{
+              width: '100%', padding: '8px 12px', borderRadius: 8, fontSize: 12,
+              backgroundColor: 'transparent',
+              border: '1px solid rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.4)',
+              outline: 'none',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              appearance: 'none',
+            }}
+          >
+            <option value="all" style={{color: 'black'}}>All Time</option>
+            <option value="today" style={{color: 'black'}}>Today</option>
+            <option value="week" style={{color: 'black'}}>This Week</option>
+            <option value="month" style={{color: 'black'}}>This Month</option>
+            <option value="oldest" style={{color: 'black'}}>Oldest First</option>
+          </select>
         </div>
 
         {/* Divider */}

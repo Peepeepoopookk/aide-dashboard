@@ -24,94 +24,102 @@ export default function HomePage() {
   const [currentPage, setCurrentPage] = useState(1)
   const SIGNALS_PER_PAGE = 100
 
-  // Supabase fetch
-  useEffect(() => {
-    async function fetchPage() {
-      setLoading(true)
+  // Supabase fetch logic
+  async function fetchPage() {
+    setLoading(true)
 
-      const from = (currentPage - 1) * SIGNALS_PER_PAGE
-      const to = from + SIGNALS_PER_PAGE - 1
+    const from = (currentPage - 1) * SIGNALS_PER_PAGE
+    const to = from + SIGNALS_PER_PAGE - 1
 
-      let query = supabase
-        .from('signals')
-        .select('id, title, url, source, score_weighted, category, summary_data, crawled_at, raw_content', { count: 'exact' })
-        .eq('scored', true)
-        .eq('classification->>is_relevant', 'true')
+    let query = supabase
+      .from('signals')
+      .select('id, title, url, source, score_weighted, category, summary_data, crawled_at, raw_content', { count: 'exact' })
+      .eq('scored', true)
+      .eq('classification->>is_relevant', 'true')
 
-      if (search) {
-        query = query.or(`title.ilike.%${search}%,url.ilike.%${search}%,raw_content.ilike.%${search}%`)
-      }
-      if (selectedSources.length > 0) {
-        query = query.in('source', selectedSources)
-      }
-      if (selectedCategories.length > 0) {
-        query = query.in('category', selectedCategories)
-      }
-      if (sortBy === 'score') {
-        query = query.order('score_weighted', { ascending: false })
-      } else {
-        query = query.order('crawled_at', { ascending: false })
-      }
+    if (search) {
+      query = query.or(`title.ilike.%${search}%,url.ilike.%${search}%,raw_content.ilike.%${search}%`)
+    }
+    if (selectedSources.length > 0) {
+      query = query.in('source', selectedSources)
+    }
+    if (selectedCategories.length > 0) {
+      query = query.in('category', selectedCategories)
+    }
+    if (sortBy === 'score') {
+      query = query.order('score_weighted', { ascending: false })
+    } else {
+      query = query.order('crawled_at', { ascending: false })
+    }
 
-      query = query.range(from, to)
+    query = query.range(from, to)
 
-      const { data, error, count } = await query
+    const { data, error, count } = await query
 
-      if (error) {
-        console.error('Supabase fetch error:', error)
-        setLoading(false)
-        return
-      }
-
-      const results = data || []
-      setSignals(results)
-      setTotalFiltered(count || 0)
-
-      const dates = results.map(s => new Date(s.crawled_at)).filter(d => !isNaN(d))
-      if (dates.length > 0) {
-        setLastCrawled(new Date(Math.max(...dates)))
-      }
-
+    if (error) {
+      console.error('Supabase fetch error:', error)
       setLoading(false)
+      return
     }
 
-    async function fetchMeta() {
-      const { count: totalCount } = await supabase
-        .from('signals')
-        .select('id', { count: 'exact', head: true })
-      if (totalCount !== null) {
-        setTotalEver(totalCount)
-      }
+    const results = data || []
+    setSignals(results)
+    setTotalFiltered(count || 0)
 
-      const { data: srcData, count: srcCount } = await supabase
-        .from('signals')
-        .select('source', { count: 'exact' })
-        .eq('scored', true)
-        .eq('classification->>is_relevant', 'true')
-      if (srcData) {
-        const uniqueSources = [...new Set(srcData.map(s => s.source).filter(Boolean))]
-        setAvailableSources(uniqueSources)
-        const statsObj = { total: srcCount || 0 }
-        uniqueSources.forEach(src => {
-          statsObj[src] = srcData.filter(s => s.source === src).length
-        })
-        setStats(statsObj)
-      }
-
-      const { data: catData } = await supabase
-        .from('signals')
-        .select('category')
-        .eq('scored', true)
-        .eq('classification->>is_relevant', 'true')
-      if (catData) {
-        const uniqueCategories = [...new Set(catData.map(s => s.category).filter(Boolean))]
-        setAvailableCategories(uniqueCategories)
-      }
+    const dates = results.map(s => new Date(s.crawled_at)).filter(d => !isNaN(d))
+    if (dates.length > 0) {
+      setLastCrawled(new Date(Math.max(...dates)))
     }
 
+    setLoading(false)
+  }
+
+  async function fetchMeta() {
+    const { count: totalCount } = await supabase
+      .from('signals')
+      .select('id', { count: 'exact', head: true })
+    if (totalCount !== null) {
+      setTotalEver(totalCount)
+    }
+
+    const { data: srcData, count: srcCount } = await supabase
+      .from('signals')
+      .select('source', { count: 'exact' })
+      .eq('scored', true)
+      .eq('classification->>is_relevant', 'true')
+    if (srcData) {
+      const uniqueSources = [...new Set(srcData.map(s => s.source).filter(Boolean))]
+      setAvailableSources(uniqueSources)
+      const statsObj = { total: srcCount || 0 }
+      uniqueSources.forEach(src => {
+        statsObj[src] = srcData.filter(s => s.source === src).length
+      })
+      setStats(statsObj)
+    }
+
+    const { data: catData } = await supabase
+      .from('signals')
+      .select('category')
+      .eq('scored', true)
+      .eq('classification->>is_relevant', 'true')
+    if (catData) {
+      const uniqueCategories = [...new Set(catData.map(s => s.category).filter(Boolean))]
+      setAvailableCategories(uniqueCategories)
+    }
+  }
+
+  useEffect(() => {
     fetchPage()
     fetchMeta()
   }, [currentPage, search, selectedSources, selectedCategories, sortBy])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchPage();
+      fetchMeta();
+    }, 300000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Animated stats counter
   useEffect(() => {

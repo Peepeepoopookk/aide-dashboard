@@ -83,15 +83,15 @@ export default function HomePage() {
         setTotalEver(totalCount)
       }
 
-      const { data: srcData } = await supabase
+      const { data: srcData, count: srcCount } = await supabase
         .from('signals')
-        .select('source')
+        .select('source', { count: 'exact' })
         .eq('scored', true)
         .eq('classification->>is_relevant', 'true')
       if (srcData) {
         const uniqueSources = [...new Set(srcData.map(s => s.source).filter(Boolean))]
         setAvailableSources(uniqueSources)
-        const statsObj = { total: count || 0 }
+        const statsObj = { total: srcCount || 0 }
         uniqueSources.forEach(src => {
           statsObj[src] = srcData.filter(s => s.source === src).length
         })

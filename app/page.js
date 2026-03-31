@@ -18,6 +18,7 @@ export default function HomePage() {
   const [sortBy, setSortBy] = useState('score')
   const [availableSources, setAvailableSources] = useState([])
   const [availableCategories, setAvailableCategories] = useState([])
+  const [categoryCounts, setCategoryCounts] = useState({})
   const [lastCrawled, setLastCrawled] = useState(null)
   const [totalEver, setTotalEver] = useState(0)
   const [totalFiltered, setTotalFiltered] = useState(0)
@@ -93,30 +94,50 @@ export default function HomePage() {
       setTotalEver(totalCount)
     }
 
-    const { data: srcData, count: srcCount } = await supabase
+    const SOURCES = ['hacker_news', 'arxiv', 'github_trending', 'reddit', 'devto', 'medium']
+    
+    const { count: srcCount } = await supabase
       .from('signals')
-      .select('source', { count: 'exact' })
+      .select('id', { count: 'exact', head: true })
       .eq('scored', true)
       .eq('classification->>is_relevant', 'true')
-    if (srcData) {
-      const uniqueSources = [...new Set(srcData.map(s => s.source).filter(Boolean))]
-      setAvailableSources(uniqueSources)
-      const statsObj = { total: srcCount || 0 }
-      uniqueSources.forEach(src => {
-        statsObj[src] = srcData.filter(s => s.source === src).length
-      })
-      setStats(statsObj)
-    }
 
-    const { data: catData } = await supabase
-      .from('signals')
-      .select('category')
-      .eq('scored', true)
-      .eq('classification->>is_relevant', 'true')
-    if (catData) {
-      const uniqueCategories = [...new Set(catData.map(s => s.category).filter(Boolean))]
-      setAvailableCategories(uniqueCategories)
-    }
+    const statsObj = { total: srcCount || 0 }
+
+    await Promise.all(SOURCES.map(async (src) => {
+      const { count } = await supabase
+        .from('signals')
+        .select('id', { count: 'exact', head: true })
+        .eq('scored', true)
+        .eq('classification->>is_relevant', 'true')
+        .eq('source', src)
+      statsObj[src] = count || 0
+    }))
+
+    setAvailableSources(SOURCES)
+    setStats(statsObj)
+
+    const CATEGORIES = ['research', 'tool', 'news', 'model', 'dataset', 'other']
+
+    const categoryCountsArr = await Promise.all(CATEGORIES.map(async (cat) => {
+      const { count } = await supabase
+        .from('signals')
+        .select('id', { count: 'exact', head: true })
+        .eq('scored', true)
+        .eq('classification->>is_relevant', 'true')
+        .eq('category', cat)
+      return { cat, count: count || 0 }
+    }))
+
+    const categoriesWithCounts = categoryCountsArr
+      .filter(c => c.count > 0)
+      .map(c => c.cat)
+
+    setAvailableCategories(CATEGORIES)
+    setCategoryCounts(categoryCountsArr.reduce((acc, c) => {
+      acc[c.cat] = c.count
+      return acc
+    }, {}))
   }
 
   useEffect(() => {
@@ -483,7 +504,7 @@ export default function HomePage() {
             >
               <span>{formatCategory(category)}</span>
               <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
-                {signals.filter(s => s.category === category).length}
+                {categoryCounts[category] || 0}
               </span>
             </button>
           ))}

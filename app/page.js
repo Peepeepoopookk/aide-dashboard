@@ -24,6 +24,7 @@ export default function HomePage() {
   const [totalFiltered, setTotalFiltered] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [dateFilter, setDateFilter] = useState('all')
+  const [activeTab, setActiveTab] = useState('raw')
   const SIGNALS_PER_PAGE = 100
 
   // Supabase fetch logic
@@ -33,11 +34,17 @@ export default function HomePage() {
     const from = (currentPage - 1) * SIGNALS_PER_PAGE
     const to = from + SIGNALS_PER_PAGE - 1
 
-    let query = supabase
-      .from('signals')
-      .select('id, title, url, source, score_weighted, category, summary_data, crawled_at, raw_content', { count: 'exact' })
-      .eq('scored', true)
-      .eq('classification->>is_relevant', 'true')
+    let query = supabase.from('signals')
+
+    if (activeTab === 'scored') {
+      query = query
+        .select('id, title, url, source, score_weighted, category, summary_data, crawled_at, raw_content', { count: 'exact' })
+        .eq('scored', true)
+        .eq('classification->>is_relevant', 'true')
+    } else {
+      query = query
+        .select('id, title, url, source, crawled_at, raw_content', { count: 'exact' })
+    }
 
     if (search) {
       query = query.or(`title.ilike.%${search}%,url.ilike.%${search}%,raw_content.ilike.%${search}%`)
@@ -48,12 +55,17 @@ export default function HomePage() {
     if (selectedCategories.length > 0) {
       query = query.in('category', selectedCategories)
     }
-    if (dateFilter === 'oldest') {
-      query = query.order('crawled_at', { ascending: true })
-    } else if (sortBy === 'score') {
-      query = query.order('score_weighted', { ascending: false })
-    } else {
+
+    if (activeTab === 'raw') {
       query = query.order('crawled_at', { ascending: false })
+    } else {
+      if (dateFilter === 'oldest') {
+        query = query.order('crawled_at', { ascending: true })
+      } else if (sortBy === 'score') {
+        query = query.order('score_weighted', { ascending: false })
+      } else {
+        query = query.order('crawled_at', { ascending: false })
+      }
     }
 
     if (dateFilter === 'today') {
@@ -143,7 +155,7 @@ export default function HomePage() {
   useEffect(() => {
     fetchPage()
     fetchMeta()
-  }, [currentPage, search, selectedSources, selectedCategories, sortBy, dateFilter])
+  }, [currentPage, search, selectedSources, selectedCategories, sortBy, dateFilter, activeTab])
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -180,7 +192,7 @@ export default function HomePage() {
   // Reset to page 1 when filters/search change
   useEffect(() => {
     setCurrentPage(1)
-  }, [search, selectedSources, selectedCategories, sortBy, dateFilter])
+  }, [search, selectedSources, selectedCategories, sortBy, dateFilter, activeTab])
 
   // Toggle source filter
   const toggleSource = (source) => {
@@ -390,24 +402,26 @@ export default function HomePage() {
             SORT BY
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => setSortBy('score')}
-              style={{
-                flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12,
-                backgroundColor: sortBy === 'score' ? 'rgba(255,255,255,0.15)' : 'transparent',
-                border: sortBy === 'score' ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.08)',
-                color: sortBy === 'score' ? 'white' : 'rgba(255,255,255,0.4)',
-              }}
-            >
-              Score
-            </button>
+            {activeTab !== 'raw' && (
+              <button
+                onClick={() => setSortBy('score')}
+                style={{
+                  flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12,
+                  backgroundColor: sortBy === 'score' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                  border: sortBy === 'score' ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.08)',
+                  color: sortBy === 'score' ? 'white' : 'rgba(255,255,255,0.4)',
+                }}
+              >
+                Score
+              </button>
+            )}
             <button
               onClick={() => setSortBy('date')}
               style={{
                 flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12,
-                backgroundColor: sortBy === 'date' ? 'rgba(255,255,255,0.15)' : 'transparent',
-                border: sortBy === 'date' ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.08)',
-                color: sortBy === 'date' ? 'white' : 'rgba(255,255,255,0.4)',
+                backgroundColor: (sortBy === 'date' || activeTab === 'raw') ? 'rgba(255,255,255,0.15)' : 'transparent',
+                border: (sortBy === 'date' || activeTab === 'raw') ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.08)',
+                color: (sortBy === 'date' || activeTab === 'raw') ? 'white' : 'rgba(255,255,255,0.4)',
               }}
             >
               Date
@@ -654,6 +668,42 @@ export default function HomePage() {
           />
         </div>
 
+        {/* TAB TOGGLE */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 28 }}>
+          <button
+            onClick={() => setActiveTab('raw')}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 500,
+              backgroundColor: 'transparent',
+              border: activeTab === 'raw' ? '1px solid rgba(255,255,255,0.3)' : '1px solid transparent',
+              color: activeTab === 'raw' ? 'white' : 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            Raw Signals
+          </button>
+          <button
+            onClick={() => setActiveTab('scored')}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 500,
+              backgroundColor: 'transparent',
+              border: activeTab === 'scored' ? '1px solid rgba(255,255,255,0.3)' : '1px solid transparent',
+              color: activeTab === 'scored' ? 'white' : 'rgba(255,255,255,0.4)',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            Scored Signals
+          </button>
+        </div>
+
         {/* SIGNAL COUNT */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', letterSpacing: 3, textTransform: 'uppercase' }}>
@@ -699,60 +749,95 @@ export default function HomePage() {
                   opacity: 0,
                 }}
               >
-                {/* Row 1: Title + Score */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-                  <a href={signal.url} target="_blank" rel="noopener noreferrer" style={{
-                    color: cardHover === signal.id ? 'rgba(255,255,255,0.75)' : 'white',
-                    fontSize: 15, fontWeight: 600, textDecoration: 'none',
-                    lineHeight: 1.5, flex: 1, transition: 'color 0.2s ease',
-                  }}>
-                    {signal.title}
-                  </a>
-                  <div style={{
-                    backgroundColor: 'rgba(255,255,255,0.07)',
-                    border: '1px solid rgba(255,255,255,0.14)',
-                    borderRadius: 20, padding: '4px 13px',
-                    fontSize: 13, fontWeight: 700, color: 'white',
-                    whiteSpace: 'nowrap', fontFamily: 'monospace', flexShrink: 0,
-                  }}>
-                    {signal.score_weighted?.toFixed(2)}
-                  </div>
-                </div>
+                {activeTab === 'scored' ? (
+                  <>
+                    {/* Row 1: Title + Score */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+                      <a href={signal.url} target="_blank" rel="noopener noreferrer" style={{
+                        color: cardHover === signal.id ? 'rgba(255,255,255,0.75)' : 'white',
+                        fontSize: 15, fontWeight: 600, textDecoration: 'none',
+                        lineHeight: 1.5, flex: 1, transition: 'color 0.2s ease',
+                      }}>
+                        {signal.title}
+                      </a>
+                      <div style={{
+                        backgroundColor: 'rgba(255,255,255,0.07)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        borderRadius: 20, padding: '4px 13px',
+                        fontSize: 13, fontWeight: 700, color: 'white',
+                        whiteSpace: 'nowrap', fontFamily: 'monospace', flexShrink: 0,
+                      }}>
+                        {signal.score_weighted?.toFixed(2)}
+                      </div>
+                    </div>
 
-                {/* Row 2: Badges + Date */}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }}>
-                  {signal.category && (
-                    <span style={{
-                      backgroundColor: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: 20, padding: '3px 11px',
-                      fontSize: 10, color: 'rgba(255,255,255,0.5)',
-                      letterSpacing: 1.5, textTransform: 'uppercase',
-                    }}>
-                      {signal.category}
-                    </span>
-                  )}
-                  {signal.source && (
-                    <span style={{
-                      backgroundColor: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: 20, padding: '3px 11px',
-                      fontSize: 10, color: 'rgba(255,255,255,0.5)',
-                      letterSpacing: 1.5, textTransform: 'uppercase',
-                    }}>
-                      {formatSource(signal.source)}
-                    </span>
-                  )}
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
-                    {new Date(signal.crawled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </span>
-                </div>
+                    {/* Row 2: Badges + Date */}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+                      {signal.category && (
+                        <span style={{
+                          backgroundColor: 'rgba(255,255,255,0.05)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: 20, padding: '3px 11px',
+                          fontSize: 10, color: 'rgba(255,255,255,0.5)',
+                          letterSpacing: 1.5, textTransform: 'uppercase',
+                        }}>
+                          {signal.category}
+                        </span>
+                      )}
+                      {signal.source && (
+                        <span style={{
+                          backgroundColor: 'rgba(255,255,255,0.05)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: 20, padding: '3px 11px',
+                          fontSize: 10, color: 'rgba(255,255,255,0.5)',
+                          letterSpacing: 1.5, textTransform: 'uppercase',
+                        }}>
+                          {formatSource(signal.source)}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
+                        {new Date(signal.crawled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
 
-                {/* Row 3: Summary headline */}
-                {signal.summary_data?.headline && (
-                  <p style={{ margin: '12px 0 0 0', fontSize: 13, color: 'rgba(255,255,255,0.4)', lineHeight: 1.65 }}>
-                    {signal.summary_data.headline}
-                  </p>
+                    {/* Row 3: Summary headline */}
+                    {signal.summary_data?.headline && (
+                      <p style={{ margin: '12px 0 0 0', fontSize: 13, color: 'rgba(255,255,255,0.4)', lineHeight: 1.65 }}>
+                        {signal.summary_data.headline}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* Row 1: Title */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+                      <a href={signal.url} target="_blank" rel="noopener noreferrer" style={{
+                        color: cardHover === signal.id ? 'rgba(255,255,255,0.75)' : 'white',
+                        fontSize: 15, fontWeight: 600, textDecoration: 'none',
+                        lineHeight: 1.5, flex: 1, transition: 'color 0.2s ease',
+                      }}>
+                        {signal.title}
+                      </a>
+                    </div>
+
+                    {/* Row 2: Source Badge + Date */}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+                      {signal.source && (
+                        <span style={{
+                          backgroundColor: 'rgba(255,255,255,0.05)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: 20, padding: '3px 11px',
+                          fontSize: 10, color: 'rgba(255,255,255,0.5)',
+                          letterSpacing: 1.5, textTransform: 'uppercase',
+                        }}>
+                          {formatSource(signal.source)}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.2)', marginLeft: 'auto' }}>
+                        {new Date(signal.crawled_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
+                  </>
                 )}
               </div>
             ))}
